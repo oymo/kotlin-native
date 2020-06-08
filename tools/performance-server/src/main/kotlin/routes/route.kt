@@ -9,7 +9,7 @@ import kotlin.js.Date
 import kotlin.js.Promise
 import org.jetbrains.report.json.*
 import org.jetbrains.elastic.*
-import org.jetbrains.build.Build
+import org.jetbrains.buildInfo.Build
 import org.jetbrains.analyzer.*
 import org.jetbrains.report.*
 import kotlin.coroutines.*
@@ -478,13 +478,15 @@ fun distinctValues(field: String, index: ElasticSearchIndex): Promise<List<Strin
     }
 }
 
+val localHostElasticConnector = UrlNetworkConnector("http://localhost", 9200)
+
 // Routing of requests to current server.
 fun router() {
     val express = require("express")
     val router = express.Router()
     val process = require("child_process")
     val fs = require("fs")
-    val connector = ElasticSearchConnector("http://localhost")
+    val connector = ElasticSearchConnector(localHostElasticConnector)
     val benchmarksIndex = BenchmarksIndex(connector)
     val goldenIndex = GoldenResultsIndex(connector)
     val buildInfoIndex = BuildInfoIndex(connector)
