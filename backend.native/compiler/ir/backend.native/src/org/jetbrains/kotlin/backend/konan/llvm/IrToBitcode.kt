@@ -1421,7 +1421,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
         functionGenerationContext.condBr(condition, bbNull, bbInstanceOf)
 
         functionGenerationContext.positionAtEnd(bbNull)
-        val resultNull = if (type.containsNull()) kTrue else kFalse
+        val resultNull = if (type.containsNull()) kImmTrue else kImmFalse
         functionGenerationContext.br(bbExit)
 
         functionGenerationContext.positionAtEnd(bbInstanceOf)
@@ -1430,7 +1430,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
             genInstanceOf(srcArg, typeOperandClass)
         } else {
             // E.g. when generating type operation with reified type parameter in the original body of inline function.
-            kTrue
+            kImmTrue
             // TODO: this code should be unreachable, however [BridgesBuilding] generates IR with such type checks.
         }
         functionGenerationContext.br(bbExit)
@@ -1567,8 +1567,8 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
         when (value.kind) {
             IrConstKind.Null    -> return codegen.kNullObjHeaderPtr
             IrConstKind.Boolean -> when (value.value) {
-                true  -> return kTrue
-                false -> return kFalse
+                true  -> return kImmTrue
+                false -> return kImmFalse
             }
             IrConstKind.Char   -> return Char16(value.value as Char).llvm
             IrConstKind.Byte   -> return Int8(value.value as Byte).llvm
@@ -2073,7 +2073,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
                 constructedClass == context.ir.symbols.string.owner -> {
                     // TODO: consider returning the empty string literal instead.
                     assert(args.isEmpty())
-                    functionGenerationContext.allocArray(constructedClass, count = kImmZero,
+                    functionGenerationContext.allocArray(constructedClass, count = kImmInt32Zero,
                             lifetime = resultLifetime(callee), exceptionHandler = currentCodeContext.exceptionHandler)
                 }
 
@@ -2087,12 +2087,6 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
         }
     }
 
-    //-------------------------------------------------------------------------//
-    private val kImmZero = Int32(0).llvm
-    private val kImmOne  = Int32(1).llvm
-    private val kTrue    = Int1(1).llvm
-    private val kFalse   = Int1(0).llvm
-
     // TODO: Intrinsify?
     private fun evaluateOperatorCall(callee: IrCall, args: List<LLVMValueRef>): LLVMValueRef {
         context.log{"evaluateOperatorCall           : origin:${ir2string(callee)}"}
@@ -2103,7 +2097,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
             val functionSymbol = function.symbol
             return when (functionSymbol) {
                 ib.eqeqeqSymbol -> icmpEq(args[0], args[1])
-                ib.booleanNotSymbol -> icmpNe(args[0], kTrue)
+                ib.booleanNotSymbol -> icmpNe(args[0], kImmTrue)
                 else -> {
                     val isFloatingPoint = args[0].type.isFloatingPoint()
                     // LLVM does not distinguish between signed/unsigned integers, so we must check
@@ -2321,21 +2315,21 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
         generateFunction(codegen, ctorFunction) {
             val initGuardName = ctorFunction.name.orEmpty() + "_guard"
             val initGuard = LLVMAddGlobal(context.llvmModule, int32Type, initGuardName)
-            LLVMSetInitializer(initGuard, kImmZero)
+            LLVMSetInitializer(initGuard, kImmInt32Zero)
             LLVMSetLinkage(initGuard, LLVMLinkage.LLVMPrivateLinkage)
             val bbInited = basicBlock("inited", null)
             val bbNeedInit = basicBlock("need_init", null)
 
 
             val value = LLVMBuildLoad(builder, initGuard, "")!!
-            condBr(icmpEq(value, kImmZero), bbNeedInit, bbInited)
+            condBr(icmpEq(value, kImmInt32Zero), bbNeedInit, bbInited)
 
             appendingTo(bbInited) {
                 ret(null)
             }
 
             appendingTo(bbNeedInit) {
-                LLVMBuildStore(builder, kImmOne, initGuard)
+                LLVMBuildStore(builder, kImmInt32One, initGuard)
 
                 // TODO: shall we put that into the try block?
                 initializers.forEach {
