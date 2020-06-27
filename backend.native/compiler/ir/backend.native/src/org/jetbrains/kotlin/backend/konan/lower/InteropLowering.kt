@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.backend.konan.descriptors.isFromInteropLibrary
 import org.jetbrains.kotlin.backend.konan.descriptors.synthesizedName
 import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.backend.konan.ir.companionObject
+import org.jetbrains.kotlin.backend.konan.ir.llvmSymbolOrigin
 import org.jetbrains.kotlin.backend.konan.llvm.IntrinsicType
 import org.jetbrains.kotlin.backend.konan.llvm.tryGetIntrinsicType
 import org.jetbrains.kotlin.backend.konan.serialization.resolveFakeOverrideMaybeAbstract
@@ -34,10 +35,7 @@ import org.jetbrains.kotlin.ir.declarations.impl.IrValueParameterImpl
 import org.jetbrains.kotlin.ir.descriptors.WrappedSimpleFunctionDescriptor
 import org.jetbrains.kotlin.ir.descriptors.WrappedValueParameterDescriptor
 import org.jetbrains.kotlin.ir.expressions.*
-import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrDelegatingConstructorCallImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionReferenceImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrReturnImpl
+import org.jetbrains.kotlin.ir.expressions.impl.*
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
@@ -1186,6 +1184,54 @@ private class InteropTransformer(val context: Context, override val irFile: IrFi
                 }
             else -> expression
         }
+    }
+
+    override fun visitTypeOperator(expression: IrTypeOperatorCall): IrExpression {
+        expression.transformChildrenVoid(this)
+
+        if (!expression.typeOperand.isObjCObjectType()) return expression
+
+        return when (expression.operator) {
+            IrTypeOperator.CAST -> {
+                builder.at(expression).irBlock {
+                    val value = irTemporary(expression.argument)
+                    val operand = expression.typeOperand
+                    +irIfThenElse(
+                            operand,
+                            condition = irObjCInstanceOf(value, operand),
+                            thenPart = IrTypeOperatorCallImpl(
+                                    startOffset, endOffset,
+                                    operand, IrTypeOperator.IMPLICIT_CAST, operand,
+                                    irGet(value)
+                            ),
+                            elsePart = irCall(symbols.ThrowTypeCastException)
+                    )
+                }
+            }
+
+            IrTypeOperator.INSTANCEOF -> builder.at(expression).irBlock {
+                val value = irTemporary(expression.argument)
+                +irObjCInstanceOf(value, expression.typeOperand)
+            }
+
+            IrTypeOperator.NOT_INSTANCEOF -> builder.at(expression).irBlock {
+                val value = irTemporary(expression.argument)
+                +irNot(irObjCInstanceOf(value, expression.typeOperand))
+            }
+
+            else -> expression
+        }
+    }
+
+    private fun IrBuilderWithScope.irObjCInstanceOf(value: IrVariable, operand: IrType): IrExpression {
+        val instanceCheck = irCall(symbols.interopObjCInstanceOf, listOf(operand)).apply {
+            putValueArgument(0, irGet(value))
+        }
+        val checkValueIsNull = irEqeqeq(irGet(value), irNull())
+        return if (operand.containsNull())
+            context.oror(startOffset, endOffset, checkValueIsNull, instanceCheck)
+        else
+            context.andand(startOffset, endOffset, irNot(checkValueIsNull), instanceCheck)
     }
 
     private fun IrBuilderWithScope.irConvertInteger(

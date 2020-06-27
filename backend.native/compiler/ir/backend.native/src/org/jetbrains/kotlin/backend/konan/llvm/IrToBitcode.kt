@@ -1394,20 +1394,12 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
 
         with(functionGenerationContext) {
             ifThen(not(genInstanceOf(srcArg, dstClass))) {
-                if (dstClass.defaultType.isObjCObjectType()) {
-                    callDirect(
-                            context.ir.symbols.ThrowTypeCastException.owner,
-                            emptyList(),
-                            Lifetime.GLOBAL
-                    )
-                } else {
-                    val dstTypeInfo = functionGenerationContext.bitcast(kInt8Ptr, codegen.typeInfoValue(dstClass))
-                    callDirect(
-                            context.ir.symbols.throwClassCastException.owner,
-                            listOf(srcArg, dstTypeInfo),
-                            Lifetime.GLOBAL
-                    )
-                }
+                val dstTypeInfo = functionGenerationContext.bitcast(kInt8Ptr, codegen.typeInfoValue(dstClass))
+                callDirect(
+                        context.ir.symbols.throwClassCastException.owner,
+                        listOf(srcArg, dstTypeInfo),
+                        Lifetime.GLOBAL
+                )
             }
         }
         return srcArg
@@ -1453,9 +1445,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
     //-------------------------------------------------------------------------//
 
     private fun genInstanceOf(obj: LLVMValueRef, dstClass: IrClass): LLVMValueRef {
-        if (dstClass.defaultType.isObjCObjectType()) {
-            return genInstanceOfObjC(obj, dstClass)
-        }
+        assert (!dstClass.defaultType.isObjCObjectType()) { "InstanceOf for ObjC classes should've been lowered" }
 
         val srcObjInfoPtr = functionGenerationContext.bitcast(codegen.kObjHeaderPtr, obj)
 
@@ -1474,61 +1464,6 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
                     val interfaceTableRecord = lookupInterfaceTableRecord(typeInfo, interfaceId)
                     icmpEq(load(structGep(interfaceTableRecord, 0 /* id */)), Int32(interfaceId).llvm)
                 }
-            }
-        }
-    }
-
-    private fun genInstanceOfObjC(obj: LLVMValueRef, dstClass: IrClass): LLVMValueRef {
-        val objCObject = callDirect(
-                context.ir.symbols.interopObjCObjectRawValueGetter.owner,
-                listOf(obj),
-                Lifetime.IRRELEVANT
-        )
-
-        return if (dstClass.isObjCClass()) {
-            if (dstClass.isInterface) {
-                val isMeta = if (dstClass.isObjCMetaClass()) kTrue else kFalse
-                call(
-                        context.llvm.Kotlin_Interop_DoesObjectConformToProtocol,
-                        listOf(
-                                objCObject,
-                                genGetObjCProtocol(dstClass),
-                                isMeta
-                        )
-                )
-            } else {
-                call(
-                        context.llvm.Kotlin_Interop_IsObjectKindOfClass,
-                        listOf(objCObject, genGetObjCClass(dstClass))
-                )
-            }.let {
-                functionGenerationContext.icmpNe(it, kFalse)
-            }
-
-
-        } else {
-            // e.g. ObjCObject, ObjCObjectBase etc.
-            if (dstClass.isObjCMetaClass()) {
-                val isClass = context.llvm.externalFunction(
-                        "object_isClass",
-                        functionType(int8Type, false, int8TypePtr),
-                        context.standardLlvmSymbolsOrigin
-                )
-
-                call(isClass, listOf(objCObject)).let {
-                    functionGenerationContext.icmpNe(it, Int8(0).llvm)
-                }
-            } else if (dstClass.isObjCProtocolClass()) {
-                // Note: it is not clear whether this class should be looked up this way.
-                // clang does the same, however swiftc uses dynamic lookup.
-                val protocolClass =
-                        functionGenerationContext.getObjCClass("Protocol", context.standardLlvmSymbolsOrigin)
-                call(
-                        context.llvm.Kotlin_Interop_IsObjectKindOfClass,
-                        listOf(objCObject, protocolClass)
-                )
-            } else {
-                kTrue
             }
         }
     }
@@ -2150,28 +2085,6 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
                     listOf(thisValue) + args, Lifetime.IRRELEVANT /* constructor doesn't return anything */)
             thisValue
         }
-    }
-
-    private fun genGetObjCClass(irClass: IrClass): LLVMValueRef {
-        return functionGenerationContext.getObjCClass(irClass, currentCodeContext.exceptionHandler)
-    }
-
-    private fun genGetObjCProtocol(irClass: IrClass): LLVMValueRef {
-        // Note: this function will return the same result for Obj-C protocol and corresponding meta-class.
-
-        assert(irClass.isInterface)
-        assert(irClass.isExternalObjCClass())
-
-        val annotation = irClass.annotations.findAnnotation(externalObjCClassFqName)!!
-        val protocolGetterName = annotation.getAnnotationStringValue("protocolGetter")
-        val protocolGetter = context.llvm.externalFunction(
-                protocolGetterName,
-                functionType(int8TypePtr, false),
-                irClass.llvmSymbolOrigin,
-                independent = true // Protocol is header-only declaration.
-        )
-
-        return call(protocolGetter, emptyList())
     }
 
     //-------------------------------------------------------------------------//
