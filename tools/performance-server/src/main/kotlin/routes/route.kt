@@ -9,6 +9,7 @@ import kotlin.js.Date
 import kotlin.js.Promise
 import org.jetbrains.report.json.*
 import org.jetbrains.elastic.*
+import org.jetbrains.network.*
 import org.jetbrains.buildInfo.Build
 import org.jetbrains.analyzer.*
 import org.jetbrains.report.*
@@ -104,7 +105,7 @@ data class BuildRegister(val buildId: String, val teamCityUser: String, val team
 
     val teamCityArtifactsUrl: String by lazy { "$teamCityUrl/builds/id:$buildId/artifacts/content/$fileWithResult" }
 
-    fun sendTeamCityRequest(url: String, json: Boolean = false) = sendRequest(RequestMethod.GET, url, teamCityUser,
+    fun sendTeamCityRequest(url: String, json: Boolean = false) = networkConnector.sendRequest(RequestMethod.GET, url, teamCityUser,
             teamCityPassword, json)
 
     private fun format(timeValue: Int): String =
@@ -479,6 +480,10 @@ fun distinctValues(field: String, index: ElasticSearchIndex): Promise<List<Strin
 }
 
 val localHostElasticConnector = UrlNetworkConnector("http://localhost", 9200)
+val awsElasticConnector = AWSNetworkConnector()
+val networkConnector = awsElasticConnector
+
+
 
 // Routing of requests to current server.
 fun router() {
@@ -486,7 +491,7 @@ fun router() {
     val router = express.Router()
     val process = require("child_process")
     val fs = require("fs")
-    val connector = ElasticSearchConnector(localHostElasticConnector)
+    val connector = ElasticSearchConnector(networkConnector)
     val benchmarksIndex = BenchmarksIndex(connector)
     val goldenIndex = GoldenResultsIndex(connector)
     val buildInfoIndex = BuildInfoIndex(connector)
@@ -715,11 +720,11 @@ fun router() {
                                 try {
                                     println("Important run $currentBuildNumber")
                                     buildsSet.add(currentBuildNumber)
-                                    val jsonReport = sendRequest(RequestMethod.GET, accessFileUrl).await()
+                                    val jsonReport = networkConnector.sendRequest(RequestMethod.GET, accessFileUrl).await()
                                     var report = convert(jsonReport, currentBuildNumber)
                                     val buildInfoRecord = BuildInfo(currentBuildNumber, infoParts[1], infoParts[2],
                                             CommitsList.parse(infoParts[4]), infoParts[3])
-                                    val externalJsonReport = sendOptionalRequest(RequestMethod.GET, accessExternalFileUrl).await()
+                                    val externalJsonReport = networkConnector.sendOptionalRequest(RequestMethod.GET, accessExternalFileUrl).await()
                                     externalJsonReport?.let {
                                         var externalReport = convert(externalJsonReport, currentBuildNumber)
                                         report = report + externalReport
@@ -783,7 +788,7 @@ fun getBuildsInfoFromArtifactory(target: String): Promise<String> {
     val artifactoryUrl = "https://repo.labs.intellij.net/kotlin-native-benchmarks"
     val buildsFileName = "buildsSummary.csv"
     val artifactoryBuildsDirectory = "builds"
-    return sendRequest(RequestMethod.GET, "$artifactoryUrl/$artifactoryBuildsDirectory/$target/$buildsFileName")
+    return networkConnector.sendRequest(RequestMethod.GET, "$artifactoryUrl/$artifactoryBuildsDirectory/$target/$buildsFileName")
 }
 
 suspend fun <T> Promise<T>.await(): T = suspendCoroutine { cont ->

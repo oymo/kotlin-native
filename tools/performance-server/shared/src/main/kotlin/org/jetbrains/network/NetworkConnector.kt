@@ -29,14 +29,14 @@ abstract class NetworkConnector {
     open fun sendRequest(method: RequestMethod, path: String, user: String? = null, password: String? = null,
                     acceptJsonContentType: Boolean = true, body: String? = null): Promise<String> =
             sendBaseRequest<String>(method, path, user, password, acceptJsonContentType, body) { url, response ->
-                error ("Error during getting response from $url\n${response.text()}")
+                error ("Error during getting response from $url\n$response")
             }
 
 
     open fun sendOptionalRequest(method: RequestMethod, path: String, user: String? = null, password: String? = null,
                             acceptJsonContentType: Boolean = true, body: String? = null): Promise<String?> =
             sendBaseRequest<String?>(method, path, user, password, acceptJsonContentType, body) { url, response ->
-                println ("Error during getting response from $url\n${response.text()}")
+                println ("Error during getting response from $url\n$response")
                 null
             }
 
