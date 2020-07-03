@@ -9,7 +9,7 @@ import kotlin.js.Promise            // TODO - migrate to multiplatform.
 import kotlin.js.json               // TODO - migrate to multiplatform.
 
 class UrlNetworkConnector(private val host: String, private val port: Int? = null) : NetworkConnector() {
-    private val url = "$host${port?.let{":$port"}}"
+    private val url = "$host${port?.let {":$port"} ?: ""}"
     override open fun <T: String?> sendBaseRequest(method: RequestMethod, path: String, user: String?, password: String?,
                                                    acceptJsonContentType: Boolean, body: String?,
                                                    errorHandler:(url: String, response: dynamic) -> Nothing?): Promise<T> {
@@ -23,6 +23,7 @@ class UrlNetworkConnector(private val host: String, private val port: Int? = nul
             headers.add("Accept" to "*/*")
             headers.add("Content-Type" to "application/json")
         }
+        println("send request $fullUrl")
         return request(fullUrl,
                 json(
                         "method" to method.toString(),

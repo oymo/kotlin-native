@@ -52,6 +52,7 @@ kotlin {
 
     targets {
         fromPreset(presets.js, 'js') {
+            nodejs()
             compilations.main.kotlinOptions {
                 outputFile = "${projectDir}/server/app.js"
                 moduleKind = "commonjs"

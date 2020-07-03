@@ -387,6 +387,7 @@ fun main(args: Array<String>) {
 
 
                 val labels = results.map { it.first }
+                println(labels)
                 val values = results[0]?.second?.size?.let { (0..it - 1).map { i -> results.map { it.second[i] } } }
                         ?: emptyList()
                 labels to values

@@ -97,16 +97,16 @@ data class BuildRegister(val buildId: String, val teamCityUser: String, val team
         }
     }
 
-    private val teamCityBuildUrl: String by lazy { "$teamCityUrl/builds/id:$buildId" }
+    private val teamCityBuildUrl: String by lazy { "builds/id:$buildId" }
 
     val changesListUrl: String by lazy {
-        "$teamCityUrl/changes/?locator=build:id:$buildId"
+        "changes/?locator=build:id:$buildId"
     }
 
-    val teamCityArtifactsUrl: String by lazy { "$teamCityUrl/builds/id:$buildId/artifacts/content/$fileWithResult" }
+    val teamCityArtifactsUrl: String by lazy { "builds/id:$buildId/artifacts/content/$fileWithResult" }
 
-    fun sendTeamCityRequest(url: String, json: Boolean = false) = networkConnector.sendRequest(RequestMethod.GET, url, teamCityUser,
-            teamCityPassword, json)
+    fun sendTeamCityRequest(url: String, json: Boolean = false) = UrlNetworkConnector(teamCityUrl).
+        sendRequest(RequestMethod.GET, url, teamCityUser, teamCityPassword, json)
 
     private fun format(timeValue: Int): String =
             if (timeValue < 10) "0$timeValue" else "$timeValue"
@@ -137,10 +137,18 @@ fun checkBuildType(currentType: String, targetType: String): Boolean {
 }
 
 // Get builds numbers in right order.
-fun <T> orderedValues(values: List<Pair<String, List<T>>>) = values
-        .sortedWith(compareBy ( { it.first.substringBefore(".").toInt() },
-                { it.first.substringAfter(".").substringBefore("-").toDouble() },
-                { it.first.substringAfterLast("-").toInt() }))
+fun <T> orderedValues(values: List<Pair<String, List<T>>>) =
+    values.sortedWith(
+            compareBy ( { it.first.substringBefore(".").toInt() },
+                    { it.first.substringAfter(".").substringBefore("-").toDouble() },
+                    { if (it.first.substringAfter("-").startsWith("M"))
+                        it.first.substringAfter("M").substringBefore("-").toInt()
+                      else
+                        Int.MAX_VALUE
+                    },
+                    { it.first.substringAfterLast("-").toInt() }
+            )
+    )
 
 // Get builds numbers from DB which have needed parameters.
 fun getBaseBuildInfo(target: String, benchmarksIndex: ElasticSearchIndex): Promise<Map<String, String>> {
@@ -637,6 +645,7 @@ fun router() {
                     // Get geometric mean for samples.
                     getGeometricMean(metric, benchmarksIndex, target, buildNumbers, normalize,
                             excludeNames).then { geoMeansValues ->
+                        println(orderedValues(geoMeansValues))
                         response.json(orderedValues(geoMeansValues))
                     }.catch { errorResponse ->
                         println("Error during getting geometric mean")
@@ -690,10 +699,12 @@ fun router() {
                 buildNumber = request.query.buildNumber
             }
         }
+        println("Get Buildds")
         getBuildsInfoFromArtifactory(target).then { buildInfo ->
             launch {
                 val buildsDescription = buildInfo.lines().drop(1)
                 var shouldConvert = buildNumber?.let { false } ?: true
+                println("Get golden ")
                 val goldenResultPromise = getGoldenResults(goldenIndex)
                 val goldenResults = goldenResultPromise.await()
                 val buildsSet = mutableSetOf<String>()
@@ -709,22 +720,22 @@ fun router() {
                         }
                         if (shouldConvert) {
                             // Save data from Bintray into database.
-                            val artifactoryUrl = "https://repo.labs.intellij.net/kotlin-native-benchmarks"
+                            val artifactoryUrlConnector = UrlNetworkConnector(artifactoryUrl)
                             val fileName = "nativeReport.json"
-                            val accessFileUrl = "$artifactoryUrl/$target/$currentBuildNumber/$fileName"
+                            val accessFileUrl = "$target/$currentBuildNumber/$fileName"
                             val extrenalFileName = if (target == "Linux") "externalReport.json" else "spaceFrameworkReport.json"
-                            val accessExternalFileUrl = "$artifactoryUrl/$target/$currentBuildNumber/$extrenalFileName"
+                            val accessExternalFileUrl = "$target/$currentBuildNumber/$extrenalFileName"
                             val infoParts = it.split(", ")
                             if ((infoParts[3] == "master" || "eap" in currentBuildNumber || "release" in currentBuildNumber) &&
                                     currentBuildNumber !in buildsSet){
                                 try {
                                     println("Important run $currentBuildNumber")
                                     buildsSet.add(currentBuildNumber)
-                                    val jsonReport = networkConnector.sendRequest(RequestMethod.GET, accessFileUrl).await()
+                                    val jsonReport = artifactoryUrlConnector.sendRequest(RequestMethod.GET, accessFileUrl).await()
                                     var report = convert(jsonReport, currentBuildNumber)
                                     val buildInfoRecord = BuildInfo(currentBuildNumber, infoParts[1], infoParts[2],
                                             CommitsList.parse(infoParts[4]), infoParts[3])
-                                    val externalJsonReport = networkConnector.sendOptionalRequest(RequestMethod.GET, accessExternalFileUrl).await()
+                                    val externalJsonReport = artifactoryUrlConnector.sendOptionalRequest(RequestMethod.GET, accessExternalFileUrl).await()
                                     externalJsonReport?.let {
                                         var externalReport = convert(externalJsonReport, currentBuildNumber)
                                         report = report + externalReport
@@ -747,6 +758,7 @@ fun router() {
                                     //println(buildInfoRecord.toJson())
                                     //println(summaryJson)
                                     // Save results in database.
+                                    println(buildInfoRecord.buildNumber)
                                     benchmarksIndex.insert(summaryReport).then { _ ->
                                         buildInfoIndex.insert(buildInfoRecord).then { _ ->
                                             println("Success insert ${buildInfoRecord.buildNumber}")
@@ -785,10 +797,9 @@ fun router() {
 }
 
 fun getBuildsInfoFromArtifactory(target: String): Promise<String> {
-    val artifactoryUrl = "https://repo.labs.intellij.net/kotlin-native-benchmarks"
     val buildsFileName = "buildsSummary.csv"
     val artifactoryBuildsDirectory = "builds"
-    return networkConnector.sendRequest(RequestMethod.GET, "$artifactoryUrl/$artifactoryBuildsDirectory/$target/$buildsFileName")
+    return UrlNetworkConnector(artifactoryUrl).sendRequest(RequestMethod.GET, "$artifactoryBuildsDirectory/$target/$buildsFileName")
 }
 
 suspend fun <T> Promise<T>.await(): T = suspendCoroutine { cont ->

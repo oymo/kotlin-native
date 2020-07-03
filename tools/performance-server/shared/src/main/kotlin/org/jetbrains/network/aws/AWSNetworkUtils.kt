@@ -17,7 +17,7 @@ external object AWSInstance {
         var method: String
         var path: String
         var body: String?
-        var headers: Map<String, String>
+        var headers: dynamic
     }
     class HttpClient() {
         val handleRequest: dynamic
@@ -34,7 +34,7 @@ external object AWSInstance {
 
 class AWSNetworkConnector : NetworkConnector() {
     // TODO: read from config file.
-    val AWSDomain = "https://vpc-kotlin-perf-service-5e6ldakkdv526ii5hbclzcmpny.eu-west-1.es.amazonaws.com"
+    val AWSDomain = "vpc-kotlin-perf-service-5e6ldakkdv526ii5hbclzcmpny.eu-west-1.es.amazonaws.com"
     val AWSRegion = "eu-west-1"
 
     override fun <T: String?> sendBaseRequest(method: RequestMethod, path: String, user: String?, password: String?,
@@ -45,16 +45,14 @@ class AWSNetworkConnector : NetworkConnector() {
         request.method = method.toString()
         request.path += path
         request.body = body
-        val headers = mutableMapOf<String, String>()
-        headers["Host"] = AWSDomain
+
+        js("request.v.headers[\"host\"] = this.AWSDomain")
 
         if (acceptJsonContentType) {
             //headers.add("Accept" to "*/*")
-            //headers["Content-Type"] = "application/json"
+            js("request.v.headers[\"Content-Type\"] = \"application/json\"")
             //headers.add("Content-Length" to js("Buffer").byteLength(request.body))
         }
-        request.headers = headers
-        println(request.headers["host"])
 
         val credentials = AWSInstance.SharedIniFileCredentials(mapOf<String, String>())
         println(credentials.accessKeyId)
@@ -62,33 +60,22 @@ class AWSNetworkConnector : NetworkConnector() {
         signer.addAuthorization(credentials, Date())
 
         val client = AWSInstance.HttpClient()
-        client.handleRequest(request, null, { response ->
-            println(response.statusCode + ' ' + response.statusMessage)
-            var responseBody = ""
-            response.on("data")  { chunk ->
-                responseBody += chunk
-                chunk
-            }
-            response.on("end") { chunk ->
-                println("Response body: " + responseBody)
-            }
-        }, { error ->
-            println("Error: " + error)
-        })
-        val util = require("util")
-        val handler = util.promisify(client.handleRequest)
-        return handler(request, null).then { response ->
-            var responseBody = StringBuilder()
-            val responseHandler = util.promisify(response.on)
-            responseHandler("data").then { chunk: String ->
-                responseBody.append(chunk)
-            }
-            responseHandler("end").then { _ ->
-                responseBody.toString()
-            }
-        }.catch { error ->
-            // Handle the error.
-            errorHandler(path, error.stack)
+        return Promise { resolve, reject ->
+            client.handleRequest(request, null, { response ->
+                var responseBody = ""
+                response.on("data") { chunk ->
+                    responseBody += chunk
+                    chunk
+                }
+                response.on("end") { chunk ->
+                    println("End")
+                    resolve(responseBody as T)
+                }
+            }, { error ->
+                println(error)
+                errorHandler(path, error.stack)
+                reject(error)
+            })
         }
     }
 }
