@@ -232,8 +232,10 @@ fun main(args: Array<String>) {
         val branches: Array<String> = JSON.parse(response)
         // Add release branches to selector.
         branches.filter{ it != "master" }.forEach {
-            val option = Option(it, it)
-            js("$('#inputGroupBranch')").append(js("$(option)"))
+            if ("v(\\d|\\.)+(-M\\d)?-fixes".toRegex().matches(it)) {
+                val option = Option(it, it)
+                js("$('#inputGroupBranch')").append(js("$(option)"))
+            }
         }
         document.querySelector("#inputGroupBranch [value=\"${parameters["branch"]}\"]")?.setAttribute("selected", "true")
     }

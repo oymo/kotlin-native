@@ -53,19 +53,6 @@ kotlin {
             distribution {
                 directory = new File("$projectDir/js/")
             }
-            runTask {
-                devServer = new KotlinWebpackConfig.DevServer(
-                        true,
-                        false,
-                        true,
-                        true,
-                        false,
-                        3000,
-                        null,
-                        ["${projectDir}/src/main/resources"]
-                )
-            }
-
         }
     }
 

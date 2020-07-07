@@ -2,7 +2,7 @@
  * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the LICENSE file.
  */
-
+@file:OptIn(ExperimentalTime::class)
 import org.w3c.xhr.*
 import kotlin.js.json
 import kotlin.js.Date
@@ -14,6 +14,7 @@ import org.jetbrains.buildInfo.Build
 import org.jetbrains.analyzer.*
 import org.jetbrains.report.*
 import kotlin.coroutines.*
+import kotlin.time.*
 
 const val teamCityUrl = "https://buildserver.labs.intellij.net/app/rest"
 const val artifactoryUrl = "https://repo.labs.intellij.net/kotlin-native-benchmarks"
@@ -137,16 +138,16 @@ fun checkBuildType(currentType: String, targetType: String): Boolean {
 }
 
 // Get builds numbers in right order.
-fun <T> orderedValues(values: List<Pair<String, List<T>>>) =
+fun <T> orderedValues(values: List<T>, buildElement: (T) -> String = { it -> it.toString() }) =
     values.sortedWith(
-            compareBy ( { it.first.substringBefore(".").toInt() },
-                    { it.first.substringAfter(".").substringBefore("-").toDouble() },
-                    { if (it.first.substringAfter("-").startsWith("M"))
-                        it.first.substringAfter("M").substringBefore("-").toInt()
+            compareBy ( { buildElement(it).substringBefore(".").toInt() },
+                    { buildElement(it).substringAfter(".").substringBefore("-").toDouble() },
+                    { if (buildElement(it).substringAfter("-").startsWith("M"))
+                        buildElement(it).substringAfter("M").substringBefore("-").toInt()
                       else
                         Int.MAX_VALUE
                     },
-                    { it.first.substringAfterLast("-").toInt() }
+                    { buildElement(it).substringAfterLast("-").toInt() }
             )
     )
 
@@ -587,7 +588,7 @@ fun router() {
                 val buildNumbers = buildsInfo.map { it.buildNumber }
                 // Get number of failed benchmarks for each build.
                 getFailuresNumber(benchmarksIndex, target, buildNumbers).then { failures ->
-                    response.json(buildsInfo.map {
+                    response.json(orderedValues(buildsInfo, { it -> it.buildNumber }).map {
                         Build(it.buildNumber, it.startTime, it.endTime, it.branch,
                                 it.commitsList.serializeFields(), failures[it.buildNumber] ?: 0)
                     })
@@ -637,37 +638,49 @@ fun router() {
             }
         }
 
-        getBaseBuildInfo(target, benchmarksIndex).then { idsMap ->
-            getBuildsInfo(type, branch, idsMap.keys, buildInfoIndex).then { buildsInfo ->
-                val buildNumbers = buildsInfo.map { it.buildNumber }
+        val timeFull = measureTime {
+            getBaseBuildInfo(target, benchmarksIndex).then { idsMap ->
+                val timeBuilds = measureTime {
+                    getBuildsInfo(type, branch, idsMap.keys, buildInfoIndex).then { buildsInfo ->
+                        val buildNumbers = buildsInfo.map { it.buildNumber }
 
-                if (aggregation == "geomean") {
-                    // Get geometric mean for samples.
-                    getGeometricMean(metric, benchmarksIndex, target, buildNumbers, normalize,
-                            excludeNames).then { geoMeansValues ->
-                        println(orderedValues(geoMeansValues))
-                        response.json(orderedValues(geoMeansValues))
-                    }.catch { errorResponse ->
-                        println("Error during getting geometric mean")
-                        println(errorResponse)
-                        response.sendStatus(400)
-                    }
-                } else {
-                    getSamples(metric, benchmarksIndex, samples, target, buildNumbers, normalize).then { geoMeansValues ->
-                        response.json(orderedValues(geoMeansValues))
+                        if (aggregation == "geomean") {
+                            // Get geometric mean for samples.
+                            val timeGeomean = measureTime {
+                                getGeometricMean(metric, benchmarksIndex, target, buildNumbers, normalize,
+                                        excludeNames).then { geoMeansValues ->
+                                    response.json(orderedValues(geoMeansValues, { it -> it.first }))
+                                }.catch { errorResponse ->
+                                    println("Error during getting geometric mean")
+                                    println(errorResponse)
+                                    response.sendStatus(400)
+                                }
+                            }
+                            println("Geomean time: $timeGeomean")
+                        } else {
+                            val timeSamples = measureTime {
+                                getSamples(metric, benchmarksIndex, samples, target, buildNumbers, normalize).then { geoMeansValues ->
+                                    response.json(orderedValues(geoMeansValues, { it -> it.first }))
+                                }.catch {
+                                    println("Error during getting samples")
+                                    response.sendStatus(400)
+                                }
+                            }
+                            println("Samples time: $timeSamples")
+
+                        }
                     }.catch {
-                        println("Error during getting samples")
+                        println("Error during getting builds information")
                         response.sendStatus(400)
                     }
                 }
+                println("Builds time: $timeBuilds")
             }.catch {
-                println("Error during getting builds information")
+                println("Error during getting builds numbers")
                 response.sendStatus(400)
             }
-        }.catch {
-            println("Error during getting builds numbers")
-            response.sendStatus(400)
         }
+        println("Full time: $timeFull")
     })
 
     // Get branches for [target].
