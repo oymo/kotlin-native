@@ -9,15 +9,28 @@ import kotlin.js.Promise            // TODO - migrate to multiplatform.
 import kotlin.js.json               // TODO - migrate to multiplatform.
 import kotlin.js.Date
 
+// Placeholder as analog for indexable type in TS.
+external interface `T$0` {
+    @nativeGetter
+    operator fun get(key: String): String?
+    @nativeSetter
+    operator fun set(key: String, value: String)
+}
+
 @JsModule("aws-sdk")
+@JsNonModule
 external object AWSInstance {
+
     // Replace dynamic with some real type
     class Endpoint(domain: String)
-    class HttpRequest(endpoint: Endpoint, region: String) {
-        var method: String
-        var path: String
-        var body: String?
-        var headers: dynamic
+    open class HttpRequest(endpoint: Endpoint, region: String) {
+        open fun pathname(): String
+        open var search: String
+        open var body: String?
+        open var endpoint: Endpoint
+        open var headers: `T$0`
+        open var method: String
+        open var path: String
     }
     class HttpClient() {
         val handleRequest: dynamic
@@ -46,11 +59,11 @@ class AWSNetworkConnector : NetworkConnector() {
         request.path += path
         request.body = body
 
-        js("request.v.headers[\"host\"] = this.AWSDomain")
+        request.headers["host"] = this.AWSDomain
 
         if (acceptJsonContentType) {
             //headers.add("Accept" to "*/*")
-            js("request.v.headers[\"Content-Type\"] = \"application/json\"")
+            request.headers["Content-Type"] = "application/json"
             //headers.add("Content-Length" to js("Buffer").byteLength(request.body))
         }
 

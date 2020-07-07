@@ -6,7 +6,7 @@
 import kotlin.browser.*
 import org.w3c.fetch.*
 import org.jetbrains.report.json.*
-import org.jetbrains.build.Build
+import org.jetbrains.buildInfo.Build
 import kotlin.js.*
 import kotlin.math.ceil
 import org.w3c.dom.*
@@ -125,6 +125,7 @@ fun customizeChart(chart: dynamic, chartContainer: String, jquerySelector: dynam
     chart.on("draw", { data ->
         var element = data.element
         if (data.type == "point") {
+            println(builds)
             val buildsGroup = getBuildsGroup(builds)
             val pointSize = 12
             val currentBuild = buildsGroup.get(data.index)
