@@ -25,6 +25,7 @@ external private fun describeWorkerBoundReference(ref: NativePtr): String
  * Note: Garbage collector currently cannot free any reference cycles with [WorkerBoundReference] in them.
  * To resolve such cycles consider using [AtomicReference<WorkerBoundReference?>] which can be explicitly
  * nulled out.
+ * To detect such leaks [kotlin.native.internal.GC.detectCycles] in debug mode could be helpful.
  */
 @Frozen
 @NoReorderFields
