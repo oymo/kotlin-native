@@ -2848,6 +2848,12 @@ standaloneTest("cycle_detector4") {
     source = "runtime/memory/cycle_detector4.kt"
 }
 
+standaloneTest("cycle_detector5") {
+    disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
+    flags = ['-g']
+    source = "runtime/memory/cycle_detector5.kt"
+}
+
 standaloneTest("cycle_collector") {
     disabled = true // Needs USE_CYCLIC_GC, which is disabled.
     flags = ['-g']
