@@ -35,6 +35,7 @@
 #include "Natives.h"
 #include "Porting.h"
 #include "Runtime.h"
+#include "Utils.h"
 #include "WorkerBoundReference.h"
 
 // If garbage collection algorithm for cyclic garbage to be used.
@@ -129,7 +130,7 @@ KBoolean g_hasCyclicCollector = true;
 
 // Only used by the leak detector.
 KRef g_leakCheckerGlobalList = nullptr;
-KInt g_leakCheckerGlobalLock = 0;
+SimpleMutex g_leakCheckerGlobalLock;
 
 // TODO: can we pass this variable as an explicit argument?
 THREAD_LOCAL_VARIABLE MemoryState* memoryState = nullptr;
@@ -969,20 +970,19 @@ ALWAYS_INLINE void runDeallocationHooks(ContainerHeader* container) {
       if (KonanNeedDebugInfo && (obj->type_info()->flags_ & TF_LEAK_DETECTOR_CANDIDATE) != 0 && Kotlin_memoryLeakCheckerEnabled()) {
         // Remove the object from the double-linked list of potentially cyclic objects.
         auto* meta = obj->meta_object();
-        lock(&g_leakCheckerGlobalLock);
+        LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
         // Get previous.
         auto* previous = meta->LeakDetector.previous_;
         auto* previousMeta = (previous != nullptr) ? previous->meta_object() : nullptr;
         auto* next = meta->LeakDetector.next_;
         auto* nextMeta = (next != nullptr) ? next->meta_object() : nullptr;
         // Remove current.
-        if (previous != nullptr)
-          previous->meta_object()->LeakDetector.next_ = next;
-        if (next != nullptr)
-          next->meta_object()->LeakDetector.previous_ = previous;
+        if (previousMeta != nullptr)
+          previousMeta->LeakDetector.next_ = next;
+        if (nextMeta != nullptr)
+          nextMeta->LeakDetector.previous_ = previous;
         if (obj == g_leakCheckerGlobalList)
           g_leakCheckerGlobalList = next;
-        unlock(&g_leakCheckerGlobalLock);
       }
       ObjHeader::destroyMetaObject(&obj->typeInfoOrMeta_);
     }
@@ -2035,13 +2035,12 @@ OBJ_GETTER(allocInstance, const TypeInfo* type_info) {
   if (KonanNeedDebugInfo && Kotlin_memoryLeakCheckerEnabled() && (type_info->flags_ & TF_LEAK_DETECTOR_CANDIDATE) != 0) {
     // Add newly allocated object to the double-linked list of potentially cyclic objects.
     MetaObjHeader* meta = obj->meta_object();
-    lock(&g_leakCheckerGlobalLock);
+    LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
     KRef old = g_leakCheckerGlobalList;
     g_leakCheckerGlobalList = obj;
     meta->LeakDetector.next_ = old;
     if (old != nullptr)
       old->meta_object()->LeakDetector.previous_ = obj;
-    unlock(&g_leakCheckerGlobalLock);
   }
 #if USE_GC
   if (Strict) {
@@ -2690,14 +2689,15 @@ void shareAny(ObjHeader* obj) {
 OBJ_GETTER0(detectCyclicReferences) {
   // Collect rootset, hold references to simplify remaining code.
   KRefList rootset;
-  lock(&g_leakCheckerGlobalLock);
-  auto* candidate = g_leakCheckerGlobalList;
-  while (candidate != nullptr) {
-    addHeapRef(candidate);
-    rootset.push_back(candidate);
-    candidate = candidate->meta_object()->LeakDetector.next_;
+  {
+    LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
+    auto* candidate = g_leakCheckerGlobalList;
+    while (candidate != nullptr) {
+      addHeapRef(candidate);
+      rootset.push_back(candidate);
+      candidate = candidate->meta_object()->LeakDetector.next_;
+    }
   }
-  unlock(&g_leakCheckerGlobalLock);
   KRefSet cyclic;
   KRefSet seen;
   KRefDeque toVisit;
