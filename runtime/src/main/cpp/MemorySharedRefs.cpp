@@ -95,6 +95,7 @@ ObjHeader* KRefSharedHolder::ref() const {
   return obj_;
 }
 
+template ObjHeader* KRefSharedHolder::ref<ErrorPolicy::kIgnore>() const;
 template ObjHeader* KRefSharedHolder::ref<ErrorPolicy::kDefaultValue>() const;
 template ObjHeader* KRefSharedHolder::ref<ErrorPolicy::kThrow>() const;
 template ObjHeader* KRefSharedHolder::ref<ErrorPolicy::kTerminate>() const;

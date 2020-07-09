@@ -28,6 +28,7 @@ external private fun describeWorkerBoundReference(ref: NativePtr): String
  * To detect such leaks [kotlin.native.internal.GC.detectCycles] in debug mode could be helpful.
  */
 @Frozen
+@LeakDetectorCandidate
 @NoReorderFields
 @ExportTypeInfo("theWorkerBoundReferenceTypeInfo")
 public class WorkerBoundReference<out T : Any>(value: T) {

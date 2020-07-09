@@ -745,12 +745,17 @@ inline void traverseObjectFields(ObjHeader* obj, func process) {
   }
 }
 
+// This also knows how to traverse special wrappers like WorkerBoundReference.
 template <typename func>
 inline void traverseReferredObjects(ObjHeader* obj, func process) {
-  traverseObjectFields(obj, [process](ObjHeader** location) {
-    ObjHeader* ref = *location;
-    if (ref != nullptr) process(ref);
-  });
+  if (obj->type_info() == theWorkerBoundReferenceTypeInfo) {
+    process(DerefWorkerBoundRerefenceUnsafe(obj));
+  } else {
+    traverseObjectFields(obj, [process](ObjHeader** location) {
+      ObjHeader* ref = *location;
+      if (ref != nullptr) process(ref);
+    });
+  }
 }
 
 template <typename func>
