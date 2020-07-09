@@ -127,8 +127,6 @@ volatile int aliveMemoryStatesCount = 0;
 
 KBoolean g_hasCyclicCollector = true;
 
-KBoolean g_checkLeaks = KonanNeedDebugInfo;
-
 // Only used by the leak detector.
 KRef g_leakCheckerGlobalList = nullptr;
 KInt g_leakCheckerGlobalLock = 0;
@@ -968,7 +966,7 @@ ALWAYS_INLINE void runDeallocationHooks(ContainerHeader* container) {
     }
 #endif  // USE_CYCLIC_GC
     if (obj->has_meta_object()) {
-      if (KonanNeedDebugInfo && (obj->type_info()->flags_ & TF_LEAK_DETECTOR_CANDIDATE) != 0 && g_checkLeaks) {
+      if (KonanNeedDebugInfo && (obj->type_info()->flags_ & TF_LEAK_DETECTOR_CANDIDATE) != 0 && Kotlin_memoryLeakCheckerEnabled()) {
         // Remove the object from the double-linked list of potentially cyclic objects.
         auto* meta = obj->meta_object();
         lock(&g_leakCheckerGlobalLock);
@@ -2034,7 +2032,7 @@ OBJ_GETTER(allocInstance, const TypeInfo* type_info) {
 #endif  // USE_GC
   auto container = ObjectContainer(state, type_info);
   ObjHeader* obj = container.GetPlace();
-  if (KonanNeedDebugInfo && g_checkLeaks && (type_info->flags_ & TF_LEAK_DETECTOR_CANDIDATE) != 0) {
+  if (KonanNeedDebugInfo && Kotlin_memoryLeakCheckerEnabled() && (type_info->flags_ & TF_LEAK_DETECTOR_CANDIDATE) != 0) {
     // Add newly allocated object to the double-linked list of potentially cyclic objects.
     MetaObjHeader* meta = obj->meta_object();
     lock(&g_leakCheckerGlobalLock);
@@ -3211,7 +3209,7 @@ KBoolean Kotlin_native_internal_GC_getTuneThreshold(KRef) {
 }
 
 OBJ_GETTER(Kotlin_native_internal_GC_detectCycles, KRef) {
-  if (!KonanNeedDebugInfo || !g_checkLeaks) RETURN_OBJ(nullptr);
+  if (!KonanNeedDebugInfo || !Kotlin_memoryLeakCheckerEnabled()) RETURN_OBJ(nullptr);
   RETURN_RESULT_OF0(detectCyclicReferences);
 }
 
