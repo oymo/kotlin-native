@@ -2852,6 +2852,7 @@ standaloneTest("cycle_detector5") {
     disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
     flags = ['-g']
     source = "runtime/memory/cycle_detector5.kt"
+    // TODO: This breaks assertions checking.
     expectedExitStatusChecker = { it != 0 } // There will actually be a memory leak.
 }
 
@@ -2865,6 +2866,7 @@ standaloneTest("cycle_detector7") {
     disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
     flags = ['-g']
     source = "runtime/memory/cycle_detector7.kt"
+    // TODO: This breaks assertions checking.
     expectedExitStatusChecker = { it != 0 } // There will actually be a memory leak.
 }
 
