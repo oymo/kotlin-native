@@ -2678,12 +2678,17 @@ template <typename F>
 inline void traverseFieldsForCycleDetection(ObjHeader* obj, const KStdUnorderedMap<KRef, KRef>& rootset, F process) {
   auto it = rootset.find(obj);
   if (it != rootset.end()) {
-    process(it->second);
+    ObjHeader* ref = it->second;
+    if (ref != nullptr) {
+      process(ref);
+    }
     return;
   }
   traverseObjectFields(obj, [process](ObjHeader** location) {
     ObjHeader* ref = *location;
-    if (ref != nullptr) process(ref);
+    if (ref != nullptr) {
+      process(ref);
+    }
   });
 }
 
@@ -2699,12 +2704,18 @@ OBJ_GETTER0(detectCyclicReferences) {
       if (type_info == theWorkerBoundReferenceTypeInfo) {
         rootset[candidate] = DerefWorkerBoundRerefenceUnsafe(candidate);
       } else if (type_info == theAtomicReferenceTypeInfo) {
-        auto* ref = DerefAtomicReference(candidate, nullptr);
-        addHeapRef(ref);
+        KRef ref = nullptr;
+        DerefAtomicReference(candidate, &ref);
+        if (ref != nullptr) {
+          addHeapRef(ref);
+        }
         rootset[candidate] = ref;
       } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-        auto* ref = DerefAtomicReference(candidate, nullptr);
-        addHeapRef(ref);
+        KRef ref = nullptr;
+        DerefAtomicReference(candidate, &ref);
+        if (ref != nullptr) {
+          addHeapRef(ref);
+        }
         rootset[candidate] = ref;
       } else {
         RuntimeAssert(false, "Unknown leak candidate detected");
@@ -2751,9 +2762,13 @@ OBJ_GETTER0(detectCyclicReferences) {
     if (type_info == theWorkerBoundReferenceTypeInfo) {
       // Nothing to do.
     } else if (type_info == theAtomicReferenceTypeInfo) {
-      ReleaseHeapRef(ref);
+      if (ref != nullptr) {
+        ReleaseHeapRef(ref);
+      }
     } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-      ReleaseHeapRef(ref);
+      if (ref != nullptr) {
+        ReleaseHeapRef(ref);
+      }
     } else {
       RuntimeAssert(false, "Unknown leak candidate detected");
     }
@@ -2773,12 +2788,18 @@ OBJ_GETTER(findCycle, KRef root) {
       if (type_info == theWorkerBoundReferenceTypeInfo) {
         rootset[candidate] = DerefWorkerBoundRerefenceUnsafe(candidate);
       } else if (type_info == theAtomicReferenceTypeInfo) {
-        auto* ref = DerefAtomicReference(candidate, nullptr);
-        addHeapRef(ref);
+        KRef ref = nullptr;
+        DerefAtomicReference(candidate, &ref);
+        if (ref != nullptr) {
+          addHeapRef(ref);
+        }
         rootset[candidate] = ref;
       } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-        auto* ref = DerefAtomicReference(candidate, nullptr);
-        addHeapRef(ref);
+        KRef ref = nullptr;
+        DerefAtomicReference(candidate, &ref);
+        if (ref != nullptr) {
+          addHeapRef(ref);
+        }
         rootset[candidate] = ref;
       } else {
         RuntimeAssert(false, "Unknown leak candidate detected");
@@ -2835,9 +2856,13 @@ OBJ_GETTER(findCycle, KRef root) {
     if (type_info == theWorkerBoundReferenceTypeInfo) {
       // Nothing to do.
     } else if (type_info == theAtomicReferenceTypeInfo) {
-      ReleaseHeapRef(ref);
+      if (ref != nullptr) {
+        ReleaseHeapRef(ref);
+      }
     } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-      ReleaseHeapRef(ref);
+      if (ref != nullptr) {
+        ReleaseHeapRef(ref);
+      }
     } else {
       RuntimeAssert(false, "Unknown leak candidate detected");
     }
