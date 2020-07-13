@@ -1395,7 +1395,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
 
         with(functionGenerationContext) {
             ifThen(not(genInstanceOf(srcArg, dstClass))) {
-                val dstTypeInfo = functionGenerationContext.bitcast(kInt8Ptr, codegen.typeInfoValue(dstClass))
+                val dstTypeInfo = bitcast(kInt8Ptr, codegen.typeInfoValue(dstClass))
                 callDirect(
                         context.ir.symbols.throwClassCastException.owner,
                         listOf(srcArg, dstTypeInfo),
