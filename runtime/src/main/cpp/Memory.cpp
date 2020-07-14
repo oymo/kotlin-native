@@ -2764,28 +2764,29 @@ inline void traverseFieldsForCycleDetection(ObjHeader* obj, const CycleDetectorR
 OBJ_GETTER0(detectCyclicReferences) {
   auto rootset = collectCycleDetectorRootset();
   KRefSet cyclic;
-  KRefSet seen;
-  KRefDeque toVisit;
   for (auto rootFieldsPair: rootset.rootToFields) {
     auto* root = rootFieldsPair.first;
-    seen.clear();
-    toVisit.clear();
-    traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) { toVisit.push_front(obj); });
-    bool seenToRoot = false;
-    while (!toVisit.empty() && !seenToRoot) {
+    const auto& fields = rootFieldsPair.second;
+    KRefSet seen;
+    KRefDeque toVisit(fields.begin(), fields.end());
+    while (!toVisit.empty()) {
       KRef current = toVisit.front();
       toVisit.pop_front();
-      if (cyclic.count(current) != 0) continue;
-      if (current == root) seenToRoot = true;
-      if (seen.count(current) == 0) {
-        traverseFieldsForCycleDetection(current, rootset, [&toVisit](ObjHeader* obj) {
-           toVisit.push_front(obj);
-        });
-        seen.insert(current);
+
+      if (current == root) {
+        // Found a cycle.
+        cyclic.insert(root);
+        break;
       }
-    }
-    if (seenToRoot) {
-      cyclic.insert(root);
+
+      // Already traversed this node.
+      if (seen.count(current) != 0)
+        continue;
+      seen.insert(current);
+
+      traverseFieldsForCycleDetection(current, rootset, [&toVisit](ObjHeader* obj) {
+         toVisit.push_front(obj);
+      });
     }
   }
   int numElements = cyclic.size();
