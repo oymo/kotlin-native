@@ -50,8 +50,7 @@ internal class ModuleMetadataEmitter(
 ) {
 
     fun emit(): KmModuleFragment {
-        val uniqIdProvider = StubIrUniqIdProvider(ManglingContext.Module(packageFqName))
-        val context = VisitingContext(uniqIds = uniqIdProvider, bridgeBuilderResult = bridgeBuilderResult)
+        val context = VisitingContext(bridgeBuilderResult = bridgeBuilderResult)
         val elements = KmElements(visitor.visitSimpleStubContainer(module, context))
         return writeModule(elements)
     }
@@ -87,7 +86,6 @@ internal class ModuleMetadataEmitter(
      */
     private data class VisitingContext(
             val container: StubContainer? = null,
-            val uniqIds: StubIrUniqIdProvider,
             val typeParametersInterner: Interner<TypeParameterStub> = Interner(),
             val bridgeBuilderResult: BridgeBuilderResult
     ) {
@@ -110,7 +108,6 @@ internal class ModuleMetadataEmitter(
         override fun visitClass(element: ClassStub, data: VisitingContext): List<KmClass> {
             val classVisitingContext = VisitingContext(
                     container = element,
-                    uniqIds = data.uniqIds.createChild(element.nestedName()),
                     typeParametersInterner = Interner(data.typeParametersInterner),
                     bridgeBuilderResult = data.bridgeBuilderResult
             )
@@ -131,7 +128,6 @@ internal class ModuleMetadataEmitter(
                     km.functions += elements.functions.toList()
                     km.constructors += elements.constructors.toList()
                     km.companionObject = element.companion?.nestedName()
-                    km.uniqId = data.uniqIds.uniqIdForClass(element)
                     if (element is ClassStub.Enum) {
                         element.entries.mapTo(km.klibEnumEntries) { mapEnumEntry(it, classVisitingContext) }
                     }
@@ -144,7 +140,6 @@ internal class ModuleMetadataEmitter(
         override fun visitTypealias(element: TypealiasStub, data: VisitingContext): KmTypeAlias =
                 data.withMappingExtensions {
                     KmTypeAlias(element.flags, element.alias.topLevelName).also { km ->
-                        km.uniqId = data.uniqIds.uniqIdForTypeAlias(element)
                         km.underlyingType = element.aliasee.map(shouldExpandTypeAliases = false)
                         km.expandedType = element.aliasee.map()
                     }
@@ -159,7 +154,6 @@ internal class ModuleMetadataEmitter(
                             element.parameters.mapTo(km.valueParameters) { it.map() }
                             element.annotations.mapTo(km.annotations) { it.map() }
                             km.returnType = element.returnType.map()
-                            km.uniqId = data.uniqIds.uniqIdForFunction(element)
                         }
                     } else {
                         null
@@ -173,7 +167,6 @@ internal class ModuleMetadataEmitter(
                         val name = getPropertyNameInScope(element, data.container)
                         KmProperty(element.flags, name, kind.getterFlags, kind.setterFlags).also { km ->
                             element.annotations.mapTo(km.annotations) { it.map() }
-                            km.uniqId = data.uniqIds.uniqIdForProperty(element)
                             km.receiverParameterType = element.receiverType?.map()
                             km.returnType = element.type.map()
                             if (kind is PropertyStub.Kind.Var) {
@@ -200,7 +193,6 @@ internal class ModuleMetadataEmitter(
                     KmConstructor(constructorStub.flags).apply {
                         constructorStub.parameters.mapTo(valueParameters, { it.map() })
                         constructorStub.annotations.mapTo(annotations, { it.map() })
-                        uniqId = data.uniqIds.uniqIdForConstructor(constructorStub)
                     }
                 }
 
@@ -216,7 +208,6 @@ internal class ModuleMetadataEmitter(
                 data.withMappingExtensions {
                     KlibEnumEntry(
                             name = enumEntry.name,
-                            uniqId = data.uniqIds.uniqIdForEnumEntry(enumEntry, data.container as ClassStub.Enum),
                             ordinal = enumEntry.ordinal,
                             annotations = mutableListOf(enumEntry.constant.mapToConstantAnnotation())
                     )
