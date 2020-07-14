@@ -25,7 +25,6 @@
 #include "Alloc.h"
 #include "KAssert.h"
 #include "Atomic.h"
-#include "AtomicReference.h"
 #if USE_CYCLIC_GC
 #include "CyclicCollector.h"
 #endif  // USE_CYCLIC_GC
@@ -743,6 +742,14 @@ inline void traverseObjectFields(ObjHeader* obj, func process) {
       process(ArrayAddressOfElementAt(array, index));
     }
   }
+}
+
+template <typename func>
+inline void traverseReferredObjects(ObjHeader* obj, func process) {
+  traverseObjectFields(obj, [process](ObjHeader** location) {
+    ObjHeader* ref = *location;
+    if (ref != nullptr) process(ref);
+  });
 }
 
 template <typename func>
@@ -2723,21 +2730,11 @@ CycleDetectorRootset collectCycleDetectorRootset() {
   LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
   auto* candidate = g_leakCheckerGlobalList;
   while (candidate != nullptr) {
-    addHeapRef(candidate);
-    auto* type_info = candidate->type_info();
-    if (type_info == theAtomicReferenceTypeInfo) {
-      KRef ref = nullptr;
-      DerefAtomicReference(candidate, &ref);
-      rootset.heldRefs.emplace_back(ref);
-      rootset.rootToFields[candidate].push_back(ref);
-    } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-      KRef ref = nullptr;
-      DerefAtomicReference(candidate, &ref);
-      rootset.heldRefs.emplace_back(ref);
-      rootset.rootToFields[candidate].push_back(ref);
-    } else {
-      RuntimeAssert(false, "Unknown leak candidate detected");
-    }
+    rootset.heldRefs.emplace_back(candidate);
+    traverseReferredObjects(candidate, [&rootset, candidate](KRef field) {
+      rootset.rootToFields[candidate].push_back(field);
+      rootset.heldRefs.emplace_back(field);
+    });
     candidate = candidate->meta_object()->LeakDetector.next_;
   }
   return rootset;
