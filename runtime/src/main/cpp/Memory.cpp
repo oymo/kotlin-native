@@ -2777,11 +2777,17 @@ OBJ_GETTER(createAndFillArray, const C& container) {
 
 OBJ_GETTER0(detectCyclicReferences) {
   auto rootset = collectCycleDetectorRootset();
+
   KRefSet cyclic;
+
   for (KRef root: rootset.roots) {
-    const auto& fields = rootset.rootToFields[root];
     KRefSet seen;
-    KRefDeque toVisit(fields.begin(), fields.end());
+
+    KRefDeque toVisit;
+    traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) {
+      toVisit.push_front(obj);
+    });
+
     while (!toVisit.empty()) {
       KRef current = toVisit.front();
       toVisit.pop_front();
@@ -2802,45 +2808,45 @@ OBJ_GETTER0(detectCyclicReferences) {
       });
     }
   }
+
   RETURN_RESULT_OF(createAndFillArray, cyclic);
 }
 
 OBJ_GETTER(findCycle, KRef root) {
   auto rootset = collectCycleDetectorRootset();
+
   KRefSet seen;
-  KRefListDeque queue;
-  KRefDeque toVisit;
-  KRefList path;
-  traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) { toVisit.push_front(obj); });
-  bool isFound = false;
-  while (!toVisit.empty() && !isFound) {
-    KRef current = toVisit.front();
-    toVisit.pop_front();
-    // Do DFS path search.
+
+  KRefListDeque toVisit;
+  traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) {
     KRefList first;
-    first.push_back(current);
-    queue.emplace_back(first);
-    seen.clear();
-    while (!queue.empty()) {
-      KRefList currentPath = queue.back();
-      queue.pop_back();
-      KRef node = currentPath[currentPath.size() - 1];
-      if (node == root) {
-         isFound = true;
-         path = currentPath;
-         break;
-      }
-      if (seen.count(node) == 0) {
-        traverseFieldsForCycleDetection(node, rootset, [&queue, &currentPath](ObjHeader* obj) {
-           KRefList newPath(currentPath);
-           newPath.push_back(obj);
-           queue.emplace_back(newPath);
-        });
-        seen.insert(node);
-      }
+    first.push_back(obj);
+    toVisit.emplace_back(first);
+  });
+
+  while (!toVisit.empty()) {
+    KRefList currentPath = toVisit.back();
+    toVisit.pop_back();
+    KRef node = currentPath[currentPath.size() - 1];
+
+    if (node == root) {
+      // Found a cycle.
+      RETURN_RESULT_OF(createAndFillArray, currentPath);
     }
+
+    // Already traversed this node.
+    if (seen.count(node) != 0)
+      continue;
+    seen.insert(node);
+
+    traverseFieldsForCycleDetection(node, rootset, [&toVisit, &currentPath](ObjHeader* obj) {
+       KRefList newPath(currentPath);
+       newPath.push_back(obj);
+       toVisit.emplace_back(newPath);
+    });
   }
-  RETURN_RESULT_OF(createAndFillArray, path);
+
+  RETURN_RESULT_OF(createAndFillArray, KRefList());
 }
 
 }  // namespace
