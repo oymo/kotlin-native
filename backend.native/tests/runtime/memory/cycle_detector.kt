@@ -11,11 +11,9 @@ fun test1() {
     a.value = b
     b.value = a
     val cycles = GC.detectCycles()!!
-    assertEquals(1, cycles.size)
-    val cycle = GC.findCycle(cycles[0])!!
-    assertEquals(2, cycle.size)
-    assertTrue(cycle.contains(a))
-    assertTrue(cycle.contains(b))
+    assertEquals(2, cycles.size)
+    assertTrue(arrayOf(a, b).contentEquals(GC.findCycle(cycles[0])!!))
+    assertTrue(arrayOf(b, a).contentEquals(GC.findCycle(cycles[1])!!))
     a.value = null
 }
 
