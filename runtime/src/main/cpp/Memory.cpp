@@ -2674,16 +2674,90 @@ void shareAny(ObjHeader* obj) {
   container->makeShared();
 }
 
+// TODO: Consider using ObjHolder.
+class ScopedRefHolder {
+ public:
+  explicit ScopedRefHolder(KRef obj): obj_(obj) {
+    if (obj_) {
+      addHeapRef(obj_);
+    }
+  }
+
+  ScopedRefHolder(const ScopedRefHolder&) = delete;
+
+  ScopedRefHolder(ScopedRefHolder&& other) noexcept: obj_(other.obj_) {
+    other.obj_ = nullptr;
+  }
+
+  ScopedRefHolder& operator=(const ScopedRefHolder&) = delete;
+
+  ScopedRefHolder& operator=(ScopedRefHolder&& other) noexcept {
+    ScopedRefHolder tmp(std::move(other));
+    swap(tmp);
+    return *this;
+  }
+
+  ~ScopedRefHolder() {
+    if (obj_ != nullptr) {
+      ReleaseHeapRef(obj_);
+    }
+  }
+
+  void swap(ScopedRefHolder& other) noexcept {
+    std::swap(obj_, other.obj_);
+  }
+
+ private:
+  KRef obj_ = nullptr;
+};
+
+struct CycleDetectorRootset {
+  // Pins a state of each root.
+  KStdUnorderedMap<KRef, KStdVector<KRef>> rootToFields;
+  // Holding roots and their fields to avoid GC-ing them.
+  KStdVector<ScopedRefHolder> heldRefs;
+};
+
+CycleDetectorRootset collectCycleDetectorRootset() {
+  CycleDetectorRootset rootset;
+  LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
+  auto* candidate = g_leakCheckerGlobalList;
+  while (candidate != nullptr) {
+    addHeapRef(candidate);
+    auto* type_info = candidate->type_info();
+    if (type_info == theWorkerBoundReferenceTypeInfo) {
+      rootset.rootToFields[candidate].push_back(DerefWorkerBoundRerefenceUnsafe(candidate));
+    } else if (type_info == theAtomicReferenceTypeInfo) {
+      KRef ref = nullptr;
+      DerefAtomicReference(candidate, &ref);
+      rootset.heldRefs.emplace_back(ref);
+      rootset.rootToFields[candidate].push_back(ref);
+    } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
+      KRef ref = nullptr;
+      DerefAtomicReference(candidate, &ref);
+      rootset.heldRefs.emplace_back(ref);
+      rootset.rootToFields[candidate].push_back(ref);
+    } else {
+      RuntimeAssert(false, "Unknown leak candidate detected");
+    }
+    candidate = candidate->meta_object()->LeakDetector.next_;
+  }
+  return rootset;
+}
+
 template <typename F>
-inline void traverseFieldsForCycleDetection(ObjHeader* obj, const KStdUnorderedMap<KRef, KRef>& rootset, F process) {
-  auto it = rootset.find(obj);
-  if (it != rootset.end()) {
-    ObjHeader* ref = it->second;
-    if (ref != nullptr) {
-      process(ref);
+inline void traverseFieldsForCycleDetection(ObjHeader* obj, const CycleDetectorRootset& rootset, F process) {
+  auto it = rootset.rootToFields.find(obj);
+  if (it != rootset.rootToFields.end()) {
+    const auto& fields = it->second;
+    for (KRef ref: fields) {
+      if (ref != nullptr) {
+        process(ref);
+      }
     }
     return;
   }
+
   traverseObjectFields(obj, [process](ObjHeader** location) {
     ObjHeader* ref = *location;
     if (ref != nullptr) {
@@ -2693,41 +2767,12 @@ inline void traverseFieldsForCycleDetection(ObjHeader* obj, const KStdUnorderedM
 }
 
 OBJ_GETTER0(detectCyclicReferences) {
-  // Collect rootset, hold references to simplify remaining code.
-  KStdUnorderedMap<KRef, KRef> rootset;
-  {
-    LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
-    auto* candidate = g_leakCheckerGlobalList;
-    while (candidate != nullptr) {
-      addHeapRef(candidate);
-      auto* type_info = candidate->type_info();
-      if (type_info == theWorkerBoundReferenceTypeInfo) {
-        rootset[candidate] = DerefWorkerBoundRerefenceUnsafe(candidate);
-      } else if (type_info == theAtomicReferenceTypeInfo) {
-        KRef ref = nullptr;
-        DerefAtomicReference(candidate, &ref);
-        if (ref != nullptr) {
-          addHeapRef(ref);
-        }
-        rootset[candidate] = ref;
-      } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-        KRef ref = nullptr;
-        DerefAtomicReference(candidate, &ref);
-        if (ref != nullptr) {
-          addHeapRef(ref);
-        }
-        rootset[candidate] = ref;
-      } else {
-        RuntimeAssert(false, "Unknown leak candidate detected");
-      }
-      candidate = candidate->meta_object()->LeakDetector.next_;
-    }
-  }
+  auto rootset = collectCycleDetectorRootset();
   KRefSet cyclic;
   KRefSet seen;
   KRefDeque toVisit;
-  for (auto rootRefPair: rootset) {
-    auto* root = rootRefPair.first;
+  for (auto rootFieldsPair: rootset.rootToFields) {
+    auto* root = rootFieldsPair.first;
     seen.clear();
     toVisit.clear();
     traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) { toVisit.push_front(obj); });
@@ -2754,59 +2799,11 @@ OBJ_GETTER0(detectCyclicReferences) {
   for (auto* it: cyclic) {
     UpdateHeapRef(place++, it);
   }
-  for (auto rootRefPair: rootset) {
-    auto* root = rootRefPair.first;
-    auto* ref = rootRefPair.second;
-    ReleaseHeapRef(root);
-    auto* type_info = root->type_info();
-    if (type_info == theWorkerBoundReferenceTypeInfo) {
-      // Nothing to do.
-    } else if (type_info == theAtomicReferenceTypeInfo) {
-      if (ref != nullptr) {
-        ReleaseHeapRef(ref);
-      }
-    } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-      if (ref != nullptr) {
-        ReleaseHeapRef(ref);
-      }
-    } else {
-      RuntimeAssert(false, "Unknown leak candidate detected");
-    }
-  }
   RETURN_OBJ(result->obj());
 }
 
 OBJ_GETTER(findCycle, KRef root) {
-  // Collect rootset, hold references to simplify remaining code.
-  KStdUnorderedMap<KRef, KRef> rootset;
-  {
-    LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
-    auto* candidate = g_leakCheckerGlobalList;
-    while (candidate != nullptr) {
-      addHeapRef(candidate);
-      auto* type_info = candidate->type_info();
-      if (type_info == theWorkerBoundReferenceTypeInfo) {
-        rootset[candidate] = DerefWorkerBoundRerefenceUnsafe(candidate);
-      } else if (type_info == theAtomicReferenceTypeInfo) {
-        KRef ref = nullptr;
-        DerefAtomicReference(candidate, &ref);
-        if (ref != nullptr) {
-          addHeapRef(ref);
-        }
-        rootset[candidate] = ref;
-      } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-        KRef ref = nullptr;
-        DerefAtomicReference(candidate, &ref);
-        if (ref != nullptr) {
-          addHeapRef(ref);
-        }
-        rootset[candidate] = ref;
-      } else {
-        RuntimeAssert(false, "Unknown leak candidate detected");
-      }
-      candidate = candidate->meta_object()->LeakDetector.next_;
-    }
-  }
+  auto rootset = collectCycleDetectorRootset();
   KRefSet seen;
   KRefListDeque queue;
   KRefDeque toVisit;
@@ -2846,25 +2843,6 @@ OBJ_GETTER(findCycle, KRef root) {
     KRef* place = ArrayAddressOfElementAt(result, 0);
     for (auto* it: path) {
         UpdateHeapRef(place++, it);
-    }
-  }
-  for (auto rootRefPair: rootset) {
-    auto* root = rootRefPair.first;
-    auto* ref = rootRefPair.second;
-    ReleaseHeapRef(root);
-    auto* type_info = root->type_info();
-    if (type_info == theWorkerBoundReferenceTypeInfo) {
-      // Nothing to do.
-    } else if (type_info == theAtomicReferenceTypeInfo) {
-      if (ref != nullptr) {
-        ReleaseHeapRef(ref);
-      }
-    } else if (type_info == theFreezableAtomicReferenceTypeInfo) {
-      if (ref != nullptr) {
-        ReleaseHeapRef(ref);
-      }
-    } else {
-      RuntimeAssert(false, "Unknown leak candidate detected");
     }
   }
   RETURN_OBJ(result->obj());
