@@ -2719,6 +2719,8 @@ class ScopedRefHolder {
 };
 
 struct CycleDetectorRootset {
+  // Orders roots.
+  KRefList roots;
   // Pins a state of each root.
   KStdUnorderedMap<KRef, KStdVector<KRef>> rootToFields;
   // Holding roots and their fields to avoid GC-ing them.
@@ -2730,6 +2732,7 @@ CycleDetectorRootset collectCycleDetectorRootset() {
   LockGuard<SimpleMutex> leakCheckerGuard(g_leakCheckerGlobalLock);
   auto* candidate = g_leakCheckerGlobalList;
   while (candidate != nullptr) {
+    rootset.roots.push_back(candidate);
     rootset.heldRefs.emplace_back(candidate);
     traverseReferredObjects(candidate, [&rootset, candidate](KRef field) {
       rootset.rootToFields[candidate].push_back(field);
@@ -2775,9 +2778,8 @@ OBJ_GETTER(createAndFillArray, const C& container) {
 OBJ_GETTER0(detectCyclicReferences) {
   auto rootset = collectCycleDetectorRootset();
   KRefSet cyclic;
-  for (auto rootFieldsPair: rootset.rootToFields) {
-    auto* root = rootFieldsPair.first;
-    const auto& fields = rootFieldsPair.second;
+  for (KRef root: rootset.roots) {
+    const auto& fields = rootset.rootToFields[root];
     KRefSet seen;
     KRefDeque toVisit(fields.begin(), fields.end());
     while (!toVisit.empty()) {
