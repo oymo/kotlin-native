@@ -2725,9 +2725,7 @@ CycleDetectorRootset collectCycleDetectorRootset() {
   while (candidate != nullptr) {
     addHeapRef(candidate);
     auto* type_info = candidate->type_info();
-    if (type_info == theWorkerBoundReferenceTypeInfo) {
-      rootset.rootToFields[candidate].push_back(DerefWorkerBoundRerefenceUnsafe(candidate));
-    } else if (type_info == theAtomicReferenceTypeInfo) {
+    if (type_info == theAtomicReferenceTypeInfo) {
       KRef ref = nullptr;
       DerefAtomicReference(candidate, &ref);
       rootset.heldRefs.emplace_back(ref);

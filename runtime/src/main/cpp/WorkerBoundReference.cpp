@@ -29,11 +29,6 @@ RUNTIME_NOTHROW void DisposeWorkerBoundReference(KRef thiz) {
   konanDestructInstance(holder);
 }
 
-RUNTIME_NOTHROW KRef DerefWorkerBoundRerefenceUnsafe(KRef thiz) {
-  auto* holder = asWorkerBoundReference(thiz)->holder;
-  return reinterpret_cast<KRefSharedHolder*>(holder)->ref<ErrorPolicy::kIgnore>();
-}
-
 extern "C" {
 
 KNativePtr Kotlin_WorkerBoundReference_create(KRef value) {
