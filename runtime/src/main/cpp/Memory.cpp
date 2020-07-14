@@ -2761,6 +2761,17 @@ inline void traverseFieldsForCycleDetection(ObjHeader* obj, const CycleDetectorR
   });
 }
 
+template <typename C>
+OBJ_GETTER(createAndFillArray, const C& container) {
+  int numElements = container.size();
+  ArrayHeader* result = AllocArrayInstance(theArrayTypeInfo, numElements, OBJ_RESULT)->array();
+  KRef* place = ArrayAddressOfElementAt(result, 0);
+  for (KRef it: container) {
+    UpdateHeapRef(place++, it);
+  }
+  RETURN_OBJ(result->obj());
+}
+
 OBJ_GETTER0(detectCyclicReferences) {
   auto rootset = collectCycleDetectorRootset();
   KRefSet cyclic;
@@ -2789,13 +2800,7 @@ OBJ_GETTER0(detectCyclicReferences) {
       });
     }
   }
-  int numElements = cyclic.size();
-  ArrayHeader* result = AllocArrayInstance(theArrayTypeInfo, numElements, OBJ_RESULT)->array();
-  KRef* place = ArrayAddressOfElementAt(result, 0);
-  for (auto* it: cyclic) {
-    UpdateHeapRef(place++, it);
-  }
-  RETURN_OBJ(result->obj());
+  RETURN_RESULT_OF(createAndFillArray, cyclic);
 }
 
 OBJ_GETTER(findCycle, KRef root) {
@@ -2833,15 +2838,7 @@ OBJ_GETTER(findCycle, KRef root) {
       }
     }
   }
-  ArrayHeader* result = nullptr;
-  if (isFound) {
-    result = AllocArrayInstance(theArrayTypeInfo, path.size(), OBJ_RESULT)->array();
-    KRef* place = ArrayAddressOfElementAt(result, 0);
-    for (auto* it: path) {
-        UpdateHeapRef(place++, it);
-    }
-  }
-  RETURN_OBJ(result->obj());
+  RETURN_RESULT_OF(createAndFillArray, path);
 }
 
 }  // namespace
