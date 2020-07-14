@@ -2824,28 +2824,10 @@ task memory_stable_ref_cross_thread_check(type: KonanLocalTest) {
     source = "runtime/memory/stable_ref_cross_thread_check.kt"
 }
 
-standaloneTest("cycle_detector1") {
+standaloneTest("cycle_detector") {
     disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
-    flags = ['-g']
-    source = "runtime/memory/cycle_detector1.kt"
-}
-
-standaloneTest("cycle_detector2") {
-    disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
-    flags = ['-g']
-    source = "runtime/memory/cycle_detector2.kt"
-}
-
-standaloneTest("cycle_detector3") {
-    disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
-    flags = ['-g']
-    source = "runtime/memory/cycle_detector3.kt"
-}
-
-standaloneTest("cycle_detector4") {
-    disabled = project.globalTestArgs.contains('-opt') || (project.testTarget == 'wasm32') // Needs debug build.
-    flags = ['-g']
-    source = "runtime/memory/cycle_detector4.kt"
+    flags = ['-tr', '-g']
+    source = "runtime/memory/cycle_detector.kt"
 }
 
 standaloneTest("cycle_collector") {
