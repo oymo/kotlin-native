@@ -4,6 +4,8 @@ import kotlin.test.*
 
 class Holder(var other: Any?)
 
+class Holder2(var field1: Any?, var field2: Any?)
+
 val <T> Array<T>.description: String
     get() {
         val result = StringBuilder()
@@ -34,9 +36,14 @@ fun assertArrayEquals(
 fun noCycles() {
     val atomic1 = AtomicReference<Any?>(null)
     val atomic2 = AtomicReference<Any?>(null)
-    atomic1.value = atomic2
-    val cycles = GC.detectCycles()!!
-    assertEquals(0, cycles.size)
+    try {
+        atomic1.value = atomic2
+        val cycles = GC.detectCycles()!!
+        assertEquals(0, cycles.size)
+    } finally {
+        atomic1.value = null
+        atomic2.value = null
+    }
 }
 
 @Test
@@ -75,6 +82,7 @@ fun oneCycleWithArray() {
         assertArrayEquals(arrayOf(array[0].value!!, array, array[0]), GC.findCycle(cycles[0])!!)
     } finally {
         array[0].value = null
+        array[1].value = null
     }
 }
 
@@ -113,6 +121,7 @@ fun twoCycles() {
         assertArrayEquals(arrayOf(atomic1, atomic2), GC.findCycle(cycles[1])!!)
     } finally {
         atomic1.value = null
+        atomic2.value = null
     }
 }
 
@@ -125,10 +134,31 @@ fun twoCyclesWithHolder() {
         atomic2.value = Holder(atomic1).freeze()
         val cycles = GC.detectCycles()!!
         assertEquals(2, cycles.size)
-        assertArrayEquals(arrayOf(atomic2.value!!, atomic1, atomic2), GC.findCycle(cycles[1])!!)
         assertArrayEquals(arrayOf(atomic2, atomic2.value!!, atomic1), GC.findCycle(cycles[0])!!)
+        assertArrayEquals(arrayOf(atomic2.value!!, atomic1, atomic2), GC.findCycle(cycles[1])!!)
     } finally {
         atomic1.value = null
+        atomic2.value = null
     }
 }
 
+@Test
+fun threeSeparateCycles() {
+    val atomic1 = AtomicReference<Any?>(null)
+    val atomic2 = AtomicReference<Any?>(null)
+    val atomic3 = AtomicReference<Any?>(null)
+    try {
+        atomic1.value = atomic1
+        atomic2.value = Holder2(atomic1, atomic2).freeze()
+        atomic3.value = Holder2(atomic3, atomic1).freeze()
+        val cycles = GC.detectCycles()!!
+        assertEquals(3, cycles.size)
+        assertArrayEquals(arrayOf(atomic1), GC.findCycle(cycles[0])!!)
+        assertArrayEquals(arrayOf(atomic2.value!!, atomic2), GC.findCycle(cycles[1])!!)
+        assertArrayEquals(arrayOf(atomic3.value!!, atomic3), GC.findCycle(cycles[2])!!)
+    } finally {
+        atomic1.value = null
+        atomic2.value = null
+        atomic3.value = null
+    }
+}
