@@ -4,33 +4,72 @@ import kotlin.test.*
 
 class Holder(var other: Any?)
 
-@Test
-fun test1() {
-    val a = AtomicReference<Any?>(null)
-    val b = AtomicReference<Any?>(null)
-    a.value = b
-    b.value = a
-    val cycles = GC.detectCycles()!!
-    assertEquals(2, cycles.size)
-    assertTrue(arrayOf(a, b).contentEquals(GC.findCycle(cycles[0])!!))
-    assertTrue(arrayOf(b, a).contentEquals(GC.findCycle(cycles[1])!!))
-    a.value = null
+fun assertArrayEquals(
+    expected: Array<Any>,
+    actual: Array<Any>
+): Unit {
+    val arrayDescription: (Array<Any>) -> String = { array ->
+        val result = StringBuilder()
+        result.append('[')
+        for (elem in array) {
+            result.append(elem.toString())
+            result.append(',')
+        }
+        result.append(']')
+        result.toString()
+    }
+    val lazyMessage: () -> String? = {
+        "Expected <${arrayDescription(expected)}>, actual <${arrayDescription(actual)}>."
+    }
+
+    asserter.assertTrue(lazyMessage, expected.size == actual.size)
+    for (i in expected.indices) {
+        asserter.assertTrue(lazyMessage, expected[i] == actual[i])
+    }
 }
 
 @Test
-fun test2() {
-    val array = arrayOf(AtomicReference<Any?>(null), AtomicReference<Any?>(null))
-    val obj1 = Holder(array).freeze()
-    array[0].value = obj1
+fun noCycles() {
+    val atomic1 = AtomicReference<Any?>(null)
+    val atomic2 = AtomicReference<Any?>(null)
+    atomic1.value = atomic2
+    val cycles = GC.detectCycles()!!
+    assertEquals(0, cycles.size)
+}
+
+@Test
+fun oneCycle() {
+    val atomic = AtomicReference<Any?>(null)
+    atomic.value = atomic
     val cycles = GC.detectCycles()!!
     assertEquals(1, cycles.size)
-    assertTrue(arrayOf(obj1, array, array[0]).contentEquals(GC.findCycle(cycles[0])!!))
+    assertArrayEquals(arrayOf(atomic), GC.findCycle(cycles[0])!!)
+    atomic.value = null
+}
+
+@Test
+fun oneCycleWithWrapper() {
+    val atomic = AtomicReference<Any?>(null)
+    atomic.value = Holder(atomic).freeze()
+    val cycles = GC.detectCycles()!!
+    assertEquals(1, cycles.size)
+    assertArrayEquals(arrayOf(atomic, atomic.value!!), GC.findCycle(cycles[0])!!)
+    atomic.value = null
+}
+
+@Test
+fun oneCycleWithArray() {
+    val array = arrayOf(AtomicReference<Any?>(null), AtomicReference<Any?>(null))
+    array[0].value = Holder(array).freeze()
+    val cycles = GC.detectCycles()!!
+    assertEquals(1, cycles.size)
+    assertArrayEquals(arrayOf(array[0], array[0].value!!, array), GC.findCycle(cycles[0])!!)
     array[0].value = null
 }
 
 @Test
-fun test3() {
-    val a1 = FreezableAtomicReference<Any?>(null)
+fun oneCycleWithLongChain() {
+    val atomic = AtomicReference<Any?>(null)
     val head = Holder(null)
     var current = head
     repeat(30) {
@@ -38,21 +77,38 @@ fun test3() {
         current.other = next
         current = next
     }
-    a1.value = head
-    current.other = a1
-    current.freeze()
+    atomic.value = head.freeze()
+    current.other = atomic
     val cycles = GC.detectCycles()!!
     assertEquals(1, cycles.size)
     val cycle = GC.findCycle(cycles[0])!!
     assertEquals(32, cycle.size)
-    a1.value = null
+    atomic.value = null
 }
 
 @Test
-fun test4() {
+fun twoCycles() {
     val atomic1 = AtomicReference<Any?>(null)
     val atomic2 = AtomicReference<Any?>(null)
     atomic1.value = atomic2
+    atomic2.value = atomic1
     val cycles = GC.detectCycles()!!
-    assertEquals(0, cycles.size)
+    assertEquals(2, cycles.size)
+    assertArrayEquals(arrayOf(atomic1, atomic2), GC.findCycle(cycles[0])!!)
+    assertArrayEquals(arrayOf(atomic2, atomic1), GC.findCycle(cycles[1])!!)
+    atomic1.value = null
 }
+
+@Test
+fun twoCyclesWithWrapper() {
+    val atomic1 = AtomicReference<Any?>(null)
+    val atomic2 = AtomicReference<Any?>(null)
+    atomic1.value = atomic2
+    atomic2.value = Holder(atomic1).freeze()
+    val cycles = GC.detectCycles()!!
+    assertEquals(2, cycles.size)
+    assertArrayEquals(arrayOf(atomic1, atomic2, atomic2.value!!), GC.findCycle(cycles[0])!!)
+    assertArrayEquals(arrayOf(atomic2, atomic2.value!!, atomic1), GC.findCycle(cycles[1])!!)
+    atomic1.value = null
+}
+
