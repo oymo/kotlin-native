@@ -325,7 +325,6 @@ struct MetaObjHeader {
   // Flags for the object state.
   int32_t flags_;
 
-  // TODO: maybe make it a union for the orthogonal features.
   struct {
     // Strong reference to the counter object.
     ObjHeader* counter_;
