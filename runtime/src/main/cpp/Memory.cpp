@@ -2743,25 +2743,55 @@ CycleDetectorRootset collectCycleDetectorRootset() {
   return rootset;
 }
 
-template <typename F>
-inline void traverseFieldsForCycleDetection(ObjHeader* obj, const CycleDetectorRootset& rootset, F process) {
-  auto it = rootset.rootToFields.find(obj);
-  if (it != rootset.rootToFields.end()) {
-    const auto& fields = it->second;
-    for (KRef ref: fields) {
-      if (ref != nullptr) {
-        process(ref);
+KRefList findCycleWithDFS(KRef root, const CycleDetectorRootset& rootset) {
+  auto traverseFields = [&rootset](KRef obj, auto process) {
+    auto it = rootset.rootToFields.find(obj);
+    if (it != rootset.rootToFields.end()) {
+      const auto& fields = it->second;
+      for (KRef field: fields) {
+        if (field != nullptr) {
+          process(field);
+        }
       }
+      return;
     }
-    return;
+
+    traverseReferredObjects(obj, [process](ObjHeader* field) {
+      process(field);
+    });
+  };
+
+  KRefSet seen;
+  KRefListDeque toVisit;
+  traverseFields(root, [&toVisit](ObjHeader *obj) {
+    KRefList initialPath;
+    initialPath.push_back(obj);
+    toVisit.push_back(initialPath);
+  });
+
+  while (!toVisit.empty()) {
+    KRefList currentPath = toVisit.back();
+    toVisit.pop_back();
+    KRef node = currentPath[currentPath.size() - 1];
+
+    if (node == root) {
+      // Found a cycle.
+      return currentPath;
+    }
+
+    // Already traversed this node.
+    if (seen.count(node) != 0)
+      continue;
+    seen.insert(node);
+
+    traverseFields(node, [&toVisit, &currentPath](ObjHeader* obj) {
+       KRefList newPath(currentPath);
+       newPath.push_back(obj);
+       toVisit.push_back(newPath);
+    });
   }
 
-  traverseObjectFields(obj, [process](ObjHeader** location) {
-    ObjHeader* ref = *location;
-    if (ref != nullptr) {
-      process(ref);
-    }
-  });
+  return KRefList();
 }
 
 template <typename C>
@@ -2781,31 +2811,8 @@ OBJ_GETTER0(detectCyclicReferences) {
   KRefSet cyclic;
 
   for (KRef root: rootset.roots) {
-    KRefSet seen;
-
-    KRefDeque toVisit;
-    traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) {
-      toVisit.push_front(obj);
-    });
-
-    while (!toVisit.empty()) {
-      KRef current = toVisit.front();
-      toVisit.pop_front();
-
-      if (current == root) {
-        // Found a cycle.
-        cyclic.insert(root);
-        break;
-      }
-
-      // Already traversed this node.
-      if (seen.count(current) != 0)
-        continue;
-      seen.insert(current);
-
-      traverseFieldsForCycleDetection(current, rootset, [&toVisit](ObjHeader* obj) {
-         toVisit.push_front(obj);
-      });
+    if (!findCycleWithDFS(root, rootset).empty()) {
+      cyclic.insert(root);
     }
   }
 
@@ -2815,38 +2822,7 @@ OBJ_GETTER0(detectCyclicReferences) {
 OBJ_GETTER(findCycle, KRef root) {
   auto rootset = collectCycleDetectorRootset();
 
-  KRefSet seen;
-
-  KRefListDeque toVisit;
-  traverseFieldsForCycleDetection(root, rootset, [&toVisit](ObjHeader* obj) {
-    KRefList first;
-    first.push_back(obj);
-    toVisit.emplace_back(first);
-  });
-
-  while (!toVisit.empty()) {
-    KRefList currentPath = toVisit.back();
-    toVisit.pop_back();
-    KRef node = currentPath[currentPath.size() - 1];
-
-    if (node == root) {
-      // Found a cycle.
-      RETURN_RESULT_OF(createAndFillArray, currentPath);
-    }
-
-    // Already traversed this node.
-    if (seen.count(node) != 0)
-      continue;
-    seen.insert(node);
-
-    traverseFieldsForCycleDetection(node, rootset, [&toVisit, &currentPath](ObjHeader* obj) {
-       KRefList newPath(currentPath);
-       newPath.push_back(obj);
-       toVisit.emplace_back(newPath);
-    });
-  }
-
-  RETURN_RESULT_OF(createAndFillArray, KRefList());
+  RETURN_RESULT_OF(createAndFillArray, findCycleWithDFS(root, rootset));
 }
 
 }  // namespace
