@@ -2770,7 +2770,7 @@ KStdVector<KRef> findCycleWithDFS(KRef root, const CycleDetectorRootset& rootset
     });
   };
 
-  appendFieldsToVisit(root, KRefList());
+  appendFieldsToVisit(root, KRefList(1, root));
 
   KStdUnorderedSet<KRef> seen;
   while (!toVisit.empty()) {
