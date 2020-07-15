@@ -2720,7 +2720,7 @@ class ScopedRefHolder {
 
 struct CycleDetectorRootset {
   // Orders roots.
-  KRefList roots;
+  KStdVector<KRef> roots;
   // Pins a state of each root.
   KStdUnorderedMap<KRef, KStdVector<KRef>> rootToFields;
   // Holding roots and their fields to avoid GC-ing them.
@@ -2743,7 +2743,7 @@ CycleDetectorRootset collectCycleDetectorRootset() {
   return rootset;
 }
 
-KRefList findCycleWithDFS(KRef root, const CycleDetectorRootset& rootset) {
+KStdVector<KRef> findCycleWithDFS(KRef root, const CycleDetectorRootset& rootset) {
   auto traverseFields = [&rootset](KRef obj, auto process) {
     auto it = rootset.rootToFields.find(obj);
     if (it != rootset.rootToFields.end()) {
@@ -2756,21 +2756,25 @@ KRefList findCycleWithDFS(KRef root, const CycleDetectorRootset& rootset) {
       return;
     }
 
-    traverseReferredObjects(obj, [process](ObjHeader* field) {
+    traverseReferredObjects(obj, [process](KRef field) {
       process(field);
     });
   };
 
-  KRefSet seen;
-  KRefListDeque toVisit;
-  traverseFields(root, [&toVisit](ObjHeader *obj) {
-    KRefList initialPath;
-    initialPath.push_back(obj);
-    toVisit.push_back(initialPath);
-  });
+  KStdVector<KStdVector<KRef>> toVisit;
+  auto appendFieldsToVisit = [&toVisit, &traverseFields](KRef obj, const KStdVector<KRef>& currentPath) {
+    traverseFields(obj, [&toVisit, &currentPath](KRef field) {
+      auto path = currentPath;
+      path.push_back(field);
+      toVisit.emplace_back(std::move(path));
+    });
+  };
 
+  appendFieldsToVisit(root, KRefList());
+
+  KStdUnorderedSet<KRef> seen;
   while (!toVisit.empty()) {
-    KRefList currentPath = toVisit.back();
+    KStdVector<KRef> currentPath = std::move(toVisit.back());
     toVisit.pop_back();
     KRef node = currentPath[currentPath.size() - 1];
 
@@ -2784,14 +2788,10 @@ KRefList findCycleWithDFS(KRef root, const CycleDetectorRootset& rootset) {
       continue;
     seen.insert(node);
 
-    traverseFields(node, [&toVisit, &currentPath](ObjHeader* obj) {
-       KRefList newPath(currentPath);
-       newPath.push_back(obj);
-       toVisit.push_back(newPath);
-    });
+    appendFieldsToVisit(node, currentPath);
   }
 
-  return KRefList();
+  return {};
 }
 
 template <typename C>
@@ -2808,7 +2808,7 @@ OBJ_GETTER(createAndFillArray, const C& container) {
 OBJ_GETTER0(detectCyclicReferences) {
   auto rootset = collectCycleDetectorRootset();
 
-  KRefList cyclic;
+  KStdVector<KRef> cyclic;
 
   for (KRef root: rootset.roots) {
     if (!findCycleWithDFS(root, rootset).empty()) {
