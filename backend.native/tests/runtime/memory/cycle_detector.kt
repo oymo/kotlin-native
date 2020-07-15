@@ -40,6 +40,8 @@ fun noCycles() {
         atomic1.value = atomic2
         val cycles = GC.detectCycles()!!
         assertEquals(0, cycles.size)
+        assertNull(GC.findCycle(atomic1));
+        assertNull(GC.findCycle(atomic2));
     } finally {
         atomic1.value = null
         atomic2.value = null
@@ -67,6 +69,7 @@ fun oneCycleWithHolder() {
         val cycles = GC.detectCycles()!!
         assertEquals(1, cycles.size)
         assertArrayEquals(arrayOf(atomic, atomic.value!!, atomic), GC.findCycle(cycles[0])!!)
+        assertArrayEquals(arrayOf(atomic.value!!, atomic, atomic.value!!), GC.findCycle(atomic.value!!)!!)
     } finally {
         atomic.value = null
     }

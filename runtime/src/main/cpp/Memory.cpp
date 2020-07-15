@@ -2822,7 +2822,11 @@ OBJ_GETTER0(detectCyclicReferences) {
 OBJ_GETTER(findCycle, KRef root) {
   auto rootset = collectCycleDetectorRootset();
 
-  RETURN_RESULT_OF(createAndFillArray, findCycleWithDFS(root, rootset));
+  auto cycle = findCycleWithDFS(root, rootset);
+  if (cycle.empty()) {
+    RETURN_OBJ(nullptr);
+  }
+  RETURN_RESULT_OF(createAndFillArray, cycle);
 }
 
 }  // namespace
