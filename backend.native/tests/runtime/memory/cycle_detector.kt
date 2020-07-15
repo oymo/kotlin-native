@@ -117,8 +117,8 @@ fun twoCycles() {
         atomic2.value = atomic1
         val cycles = GC.detectCycles()!!
         assertEquals(2, cycles.size)
-        assertArrayEquals(arrayOf(atomic2, atomic1), GC.findCycle(cycles[0])!!)
-        assertArrayEquals(arrayOf(atomic1, atomic2), GC.findCycle(cycles[1])!!)
+        assertArrayEquals(arrayOf(atomic1, atomic2), GC.findCycle(cycles[0])!!)
+        assertArrayEquals(arrayOf(atomic2, atomic1), GC.findCycle(cycles[1])!!)
     } finally {
         atomic1.value = null
         atomic2.value = null
@@ -134,8 +134,8 @@ fun twoCyclesWithHolder() {
         atomic2.value = Holder(atomic1).freeze()
         val cycles = GC.detectCycles()!!
         assertEquals(2, cycles.size)
-        assertArrayEquals(arrayOf(atomic2, atomic2.value!!, atomic1), GC.findCycle(cycles[0])!!)
-        assertArrayEquals(arrayOf(atomic2.value!!, atomic1, atomic2), GC.findCycle(cycles[1])!!)
+        assertArrayEquals(arrayOf(atomic2.value!!, atomic1, atomic2), GC.findCycle(cycles[0])!!)
+        assertArrayEquals(arrayOf(atomic2, atomic2.value!!, atomic1), GC.findCycle(cycles[1])!!)
     } finally {
         atomic1.value = null
         atomic2.value = null
@@ -153,9 +153,9 @@ fun threeSeparateCycles() {
         atomic3.value = Holder2(atomic3, atomic1).freeze()
         val cycles = GC.detectCycles()!!
         assertEquals(3, cycles.size)
-        assertArrayEquals(arrayOf(atomic1), GC.findCycle(cycles[0])!!)
+        assertArrayEquals(arrayOf(atomic3.value!!, atomic3), GC.findCycle(cycles[0])!!)
         assertArrayEquals(arrayOf(atomic2.value!!, atomic2), GC.findCycle(cycles[1])!!)
-        assertArrayEquals(arrayOf(atomic3.value!!, atomic3), GC.findCycle(cycles[2])!!)
+        assertArrayEquals(arrayOf(atomic1), GC.findCycle(cycles[2])!!)
     } finally {
         atomic1.value = null
         atomic2.value = null

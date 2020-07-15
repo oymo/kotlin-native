@@ -2808,11 +2808,11 @@ OBJ_GETTER(createAndFillArray, const C& container) {
 OBJ_GETTER0(detectCyclicReferences) {
   auto rootset = collectCycleDetectorRootset();
 
-  KRefSet cyclic;
+  KRefList cyclic;
 
   for (KRef root: rootset.roots) {
     if (!findCycleWithDFS(root, rootset).empty()) {
-      cyclic.insert(root);
+      cyclic.push_back(root);
     }
   }
 
